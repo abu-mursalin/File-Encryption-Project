@@ -2,36 +2,16 @@
 #include <string.h>
 #include <ctype.h>
 #include<stdbool.h>
+#include<stdio.h>
+#include<stdlib.h>
+#include <openssl/aes.h>
+#include <openssl/evp.h>
+#include <openssl/sha.h>
 typedef long long ll;
 
 FILE *fr ,*fw;
 char *path1=NULL, *path2=NULL, *Label=NULL;
 bool fo=false, fs=false, ft=false;
-
-ll arr[100],cnt = 0;
-
-/*creat a integer array from password*/
-void make_array(char *password){
-    int j=0;
-    for(int i=0;i<strlen(password)-1;i++){
-        if(password[i]==' ' && password[i+1]==' ')continue;
-        else password[j++]=password[i];
-    }
-    password[j]='\0';
-
-    ll ans=0,x=10;
-    for(int i=0;i<strlen(password);i++){
-        if(password[i]==' '){
-            arr[cnt++]=ans;
-            ans=0;
-        }
-        else{
-            ans*=x;
-            ans+=(password[i]-'0');
-        }
-    }
-    arr[cnt]=ans;
-}
 
 /*Caesar cipher encryption algorithm*/
 void caesar_cipher_encrypt(int key){
@@ -91,6 +71,71 @@ void xor_cipher_decrypt(int key){
     fclose(fw);
 }
 
+// Function to derive AES key from password using SHA-256
+void derive_key_from_password(const char *password, unsigned char *key) {
+    SHA256((unsigned char *)password, strlen(password), key);
+}
+
+// AES encryption for files
+void aes_encrypt(const unsigned char *key) {
+    // FILE *in = fopen(input_file, "rb");
+    // FILE *out = fopen(output_file, "wb");
+    // if (!in || !out) {
+    //     printf("File error!\n");
+    //     exit(1);
+    // }
+
+    AES_KEY enc_key;
+    AES_set_encrypt_key(key, 256, &enc_key); // 256-bit AES key
+
+    unsigned char in_block[16], out_block[16];
+    int bytes_read;
+
+    while ((bytes_read = fread(in_block, 1, 16, fr)) > 0) {
+        if (bytes_read < 16)
+            memset(in_block + bytes_read, 16 - bytes_read, 16 - bytes_read); // PKCS#7 padding
+        AES_encrypt(in_block, out_block, &enc_key);
+        fwrite(out_block, 1, 16, fw);
+    }
+
+    fclose(fr);
+    fclose(fw);
+    // printf("✅ File encrypted successfully!\n");
+}
+
+// AES decryption for files
+void aes_decrypt(const unsigned char *key) {
+    // FILE *in = fopen(input_file, "rb");
+    // FILE *out = fopen(output_file, "wb");
+    // if (!in || !out) {
+    //     printf("File error!\n");
+    //     exit(1);
+    // }
+
+    AES_KEY dec_key;
+    AES_set_decrypt_key(key, 256, &dec_key);
+
+    unsigned char in_block[16], out_block[16];
+    int bytes_read;
+
+    while ((bytes_read = fread(in_block, 1, 16, fr)) > 0) {
+        AES_decrypt(in_block, out_block, &dec_key);
+
+        if (feof(fr)) {
+            int pad = out_block[15];
+            if (pad > 0 && pad <= 16)
+                fwrite(out_block, 1, 16 - pad, fw);
+            else
+                fwrite(out_block, 1, 16, fw);
+        } else {
+            fwrite(out_block, 1, 16, fw);
+        }
+    }
+
+    fclose(fr);
+    fclose(fw);
+    // printf("✅ File decrypted successfully!\n");
+}
 /*do_encrypt_decrypt function that determine which encryption or decryption algorithm will work*/
 static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
     GtkWidget ** widgets = (GtkWidget **)user_data;
@@ -132,8 +177,10 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
             else xor_cipher_encrypt(key);
         }
 
-        else if(strcmp(algorithm,"Hill Cipher") == 0){
-            make_array(password);
+        else if(strcmp(algorithm,"AES") == 0){
+            unsigned char key[32];
+            derive_key_from_password(password, key); // Create AES key from password
+            aes_encrypt(key);
         }
 
         gtk_label_set_text(GTK_LABEL(label),"Encryption Successful !");
@@ -165,8 +212,10 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
             else xor_cipher_decrypt(key);
         }
 
-        else if(strcmp(algorithm,"Hill Cipher") == 0){
-            
+        else if(strcmp(algorithm,"AES") == 0){
+            unsigned char key[32];
+            derive_key_from_password(password, key); // Create AES key from password
+            aes_decrypt(key);
         }
 
         gtk_label_set_text(GTK_LABEL(label),"Decryption Successful !");
@@ -203,8 +252,8 @@ static void on_toggled(GtkWidget *button, gpointer user_data){
             gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
         }
 
-        else if(strcmp(algorithm,"Hill Cipher") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (integer value n^2 times separate by space)");
+        else if(strcmp(algorithm,"AES") == 0){
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
         }
 
         ft = false;
@@ -221,8 +270,8 @@ static void on_response_save(GtkNativeDialog *native,int response,gpointer user_
         GtkFileChooser *chooser = GTK_FILE_CHOOSER(native);
         GFile *file = gtk_file_chooser_get_file(chooser);
         path1 = g_file_get_path(file);
-        if(path2 != NULL && (strcmp(path1,path2) == 0))fw = fopen(path1,"r+");
-        else fw = fopen(path1,"w");
+        if(path2 != NULL && (strcmp(path1,path2) == 0))fw = fopen(path1,"rb+");
+        else fw = fopen(path1,"wb");
         GtkWidget *label = gtk_label_new(path1);
         gtk_widget_set_halign(label,GTK_ALIGN_START);
         gtk_button_set_child(button,label);
@@ -247,8 +296,8 @@ static void on_response_save(GtkNativeDialog *native,int response,gpointer user_
                 gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
             }
 
-            else if(strcmp(algorithm,"Hill Cipher") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (integer value n^2 times separate by space)");
+            else if(strcmp(algorithm,"AES") == 0){
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
             }
 
             ft = false;
@@ -271,7 +320,7 @@ static void on_response_open(GtkNativeDialog *native,int response,gpointer user_
         GtkFileChooser *chooser = GTK_FILE_CHOOSER(native);
         GFile *file = gtk_file_chooser_get_file(chooser);
         path2 = g_file_get_path(file);
-        fr = fopen(path2,"r");
+        fr = fopen(path2,"rb");
         GtkWidget *label = gtk_label_new(path2);
         gtk_widget_set_halign(label,GTK_ALIGN_START);
         gtk_button_set_child(button,label);
@@ -296,8 +345,8 @@ static void on_response_open(GtkNativeDialog *native,int response,gpointer user_
                 gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
             }
 
-            else if(strcmp(algorithm,"Hill Cipher") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (integer value n^2 times separate by space)");
+            else if(strcmp(algorithm,"AES") == 0){
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
             }
 
             ft = false;
@@ -312,7 +361,7 @@ static void on_response_open(GtkNativeDialog *native,int response,gpointer user_
     }
 }
 
-/*used to crate native dialog for searching a file*/
+/*used to create native dialog for searching a file*/
 static void browse_clicked_save(GtkWidget *button, gpointer user_data){
     GtkWidget **widgets = (GtkWidget **)user_data;
 
@@ -409,8 +458,8 @@ static void on_algorithm(GtkComboBox *combobox, gpointer user_data){
             gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
         }
 
-        else if(strcmp(algorithm,"Hill Cipher") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (integer value n^2 times separate by space)");
+        else if(strcmp(algorithm,"AES") == 0){
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
         }
     }
 }
@@ -511,7 +560,6 @@ static void activate(GtkApplication *app, gpointer user_data) {
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combobox),"Select a algorithm");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combobox),"Caesar Cipher");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combobox),"Xor Cipher");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combobox),"Hill Cipher");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combobox),"AES");
     gtk_combo_box_set_active(GTK_COMBO_BOX(combobox),0);
     gtk_box_append(GTK_BOX(hbox5),combobox);
