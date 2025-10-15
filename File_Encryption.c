@@ -71,19 +71,13 @@ void xor_cipher_decrypt(int key){
     fclose(fw);
 }
 
-// Function to derive AES key from password using SHA-256
+// Function to derive AES key from key value using SHA-256
 void derive_key_from_password(const char *password, unsigned char *key) {
     SHA256((unsigned char *)password, strlen(password), key);
 }
 
-// AES encryption for files
+// AES encryption algorithm
 void aes_encrypt(const unsigned char *key) {
-    // FILE *in = fopen(input_file, "rb");
-    // FILE *out = fopen(output_file, "wb");
-    // if (!in || !out) {
-    //     printf("File error!\n");
-    //     exit(1);
-    // }
 
     AES_KEY enc_key;
     AES_set_encrypt_key(key, 256, &enc_key); // 256-bit AES key
@@ -100,17 +94,10 @@ void aes_encrypt(const unsigned char *key) {
 
     fclose(fr);
     fclose(fw);
-    // printf("✅ File encrypted successfully!\n");
 }
 
-// AES decryption for files
+// AES decryption algorithm
 void aes_decrypt(const unsigned char *key) {
-    // FILE *in = fopen(input_file, "rb");
-    // FILE *out = fopen(output_file, "wb");
-    // if (!in || !out) {
-    //     printf("File error!\n");
-    //     exit(1);
-    // }
 
     AES_KEY dec_key;
     AES_set_decrypt_key(key, 256, &dec_key);
@@ -134,7 +121,6 @@ void aes_decrypt(const unsigned char *key) {
 
     fclose(fr);
     fclose(fw);
-    // printf("✅ File decrypted successfully!\n");
 }
 /*do_encrypt_decrypt function that determine which encryption or decryption algorithm will work*/
 static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
@@ -158,7 +144,7 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
 
             if(key>25 || key<1){
                 gtk_editable_set_text(GTK_EDITABLE(entry),"");
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Password must be between 1 to 25");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Key value must be between 1 to 25");
                 return;
             }
 
@@ -170,7 +156,7 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
 
             if(key>255 || key<1){
                 gtk_editable_set_text(GTK_EDITABLE(entry),"");
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Password must be between 1 to 255");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Key value must be between 1 to 255");
                 return;
             }
 
@@ -179,7 +165,7 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
 
         else if(strcmp(algorithm,"AES") == 0){
             unsigned char key[32];
-            derive_key_from_password(password, key); // Create AES key from password
+            derive_key_from_password(password, key); // Create AES key from key value
             aes_encrypt(key);
         }
 
@@ -194,7 +180,7 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
 
             if(key>255 || key<1){
                 gtk_editable_set_text(GTK_EDITABLE(entry),"");
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Password must be between 1 to 255");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Key value must be between 1 to 255");
                 return;
             }
 
@@ -206,7 +192,7 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
 
             if(key>255 || key<1){
                 gtk_editable_set_text(GTK_EDITABLE(entry),"");
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Password must be between 1 to 255");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Key value must be between 1 to 255");
                 return;
             }
             else xor_cipher_decrypt(key);
@@ -214,7 +200,7 @@ static void do_encrypt_decrypt(GtkWidget *button, gpointer user_data){
 
         else if(strcmp(algorithm,"AES") == 0){
             unsigned char key[32];
-            derive_key_from_password(password, key); // Create AES key from password
+            derive_key_from_password(password, key); // Create AES key from key value
             aes_decrypt(key);
         }
 
@@ -238,22 +224,22 @@ static void on_toggled(GtkWidget *button, gpointer user_data){
 
     ft = true;
 
-    /*used to determine and set if the program is ready or not to encrypt or decrypt and give permission to enter password*/
+    /*used to determine and set if the program is ready or not to encrypt or decrypt and give permission to enter key value*/
     if(ft && fo && fs){
         gtk_label_set_text(GTK_LABEL(label),"Status : Ready");
         gtk_editable_set_editable(GTK_EDITABLE(entry),TRUE);
         char *algorithm = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combobox));
 
         if(strcmp(algorithm,"Caesar Cipher") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 25) :");
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 25) :");
         }
 
         else if(strcmp(algorithm,"Xor Cipher") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 255) :");
         }
 
         else if(strcmp(algorithm,"AES") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value :");
         }
 
         ft = false;
@@ -282,22 +268,22 @@ static void on_response_save(GtkNativeDialog *native,int response,gpointer user_
 
         fs = true;
 
-        /*used to determine and set if the program is ready or not to encrypt or decrypt and give permission to enter password*/
+        /*used to determine and set if the program is ready or not to encrypt or decrypt and give permission to enter key value*/
         if(ft && fo && fs){
             gtk_label_set_text(GTK_LABEL(widgets[2]),"Status : Ready");
             gtk_editable_set_editable(GTK_EDITABLE(entry),TRUE);
             char *algorithm = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combobox));
 
             if(strcmp(algorithm,"Caesar Cipher") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 25) :");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 25) :");
             }
 
             else if(strcmp(algorithm,"Xor Cipher") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 255) :");
             }
 
             else if(strcmp(algorithm,"AES") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value :");
             }
 
             ft = false;
@@ -331,22 +317,22 @@ static void on_response_open(GtkNativeDialog *native,int response,gpointer user_
 
         fo = true;
 
-        /*used to determine and set if the program is ready or not to encrypt or decrypt and give permission to enter password*/
+        /*used to determine and set if the program is ready or not to encrypt or decrypt and give permission to enter key value*/
         if(ft && fo && fs){
             gtk_label_set_text(GTK_LABEL(widgets[2]),"Status : Ready");
             gtk_editable_set_editable(GTK_EDITABLE(entry),TRUE);
             char *algorithm = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combobox));
 
             if(strcmp(algorithm,"Caesar Cipher") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 25) :");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 25) :");
             }
 
             else if(strcmp(algorithm,"Xor Cipher") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 255) :");
             }
 
             else if(strcmp(algorithm,"AES") == 0){
-                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
+                gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value :");
             }
 
             ft = false;
@@ -403,7 +389,7 @@ static void get_clear(GtkWidget *button, gpointer user_data){
     gtk_button_set_child(GTK_BUTTON(button2),label3);
     gtk_editable_set_editable(GTK_EDITABLE(entry),TRUE);
     gtk_editable_set_text(GTK_EDITABLE(entry),"");
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter password when you are asked");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter key value when you are asked");
     gtk_editable_set_editable(GTK_EDITABLE(entry),FALSE);
     gtk_check_button_set_active(radio1,FALSE);
     gtk_check_button_set_active(radio2,FALSE);
@@ -451,15 +437,15 @@ static void on_algorithm(GtkComboBox *combobox, gpointer user_data){
         char *algorithm = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(combobox));
 
         if(strcmp(algorithm,"Caesar Cipher") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 25) :");
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 25) :");
         }
 
         else if(strcmp(algorithm,"Xor Cipher") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password (1 to 255) :");
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value (1 to 255) :");
         }
 
         else if(strcmp(algorithm,"AES") == 0){
-            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your password :");
+            gtk_entry_set_placeholder_text(GTK_ENTRY(entry),"Enter your key value :");
         }
     }
 }
@@ -588,12 +574,12 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *hbox4 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL,10);
 
     /*Creating a label*/
-    GtkWidget *label5 = gtk_label_new("Password :");
+    GtkWidget *label5 = gtk_label_new("Key Value :");
     gtk_box_append(GTK_BOX(hbox4),label5);
 
-    /*Creating a entry button where we enter password*/
+    /*Creating a entry button where we enter key value*/
     GtkWidget *entry1 = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(entry1),"Enter password when you are asked");
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry1),"Enter key value when you are asked");
     gtk_editable_set_editable(GTK_EDITABLE(entry1),FALSE);
     gtk_widget_set_margin_start(entry1,80);
     gtk_widget_set_hexpand(entry1,TRUE);
