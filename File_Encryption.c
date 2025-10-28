@@ -455,6 +455,17 @@ static void close_window(GtkWidget *button, gpointer user_data){
     exit(0);
 }
 
+static void toggle_visibility(GtkEntry *entry, GtkEntryIconPosition pos, GdkEvent *event, gpointer user_data) {
+    gboolean visible = gtk_entry_get_visibility(entry);
+    gtk_entry_set_visibility(entry, !visible);  // toggle visibility
+
+    // change icon based on state
+    if (visible)
+        gtk_entry_set_icon_from_icon_name(entry, GTK_ENTRY_ICON_SECONDARY, "view-hidden-symbolic");
+    else
+        gtk_entry_set_icon_from_icon_name(entry, GTK_ENTRY_ICON_SECONDARY, "view-visible-symbolic");
+}
+
 /*Activate function*/
 static void activate(GtkApplication *app, gpointer user_data) {
 
@@ -581,6 +592,9 @@ static void activate(GtkApplication *app, gpointer user_data) {
     GtkWidget *entry1 = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(entry1),"Enter key value when you are asked");
     gtk_editable_set_editable(GTK_EDITABLE(entry1),FALSE);
+    gtk_entry_set_visibility(GTK_ENTRY(entry1), FALSE);  // Hide by default (●●●●)
+    gtk_entry_set_icon_from_icon_name(GTK_ENTRY(entry1), GTK_ENTRY_ICON_SECONDARY, "view-hidden-symbolic");
+    gtk_entry_set_icon_activatable(GTK_ENTRY(entry1), GTK_ENTRY_ICON_SECONDARY, TRUE);
     gtk_widget_set_margin_start(entry1,80);
     gtk_widget_set_hexpand(entry1,TRUE);
     gtk_box_append(GTK_BOX(hbox4),entry1);
@@ -687,6 +701,8 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
     /*calling close_window function to close the window*/
     g_signal_connect(button9,"clicked",G_CALLBACK(close_window),NULL);
+
+    g_signal_connect(entry1,"icon-press",G_CALLBACK(toggle_visibility),NULL);
 
     /*it show the window*/
     gtk_window_present(GTK_WINDOW(window));
