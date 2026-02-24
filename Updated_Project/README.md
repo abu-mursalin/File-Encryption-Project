@@ -29,6 +29,7 @@ A GUI-based file encryption and decryption desktop application built in **C** us
 - [SOLID Principles](#solid-principles)
 - [Known Limitations](#known-limitations)
 - [Future Improvements](#future-improvements)
+- [Development History — Step-by-Step Problem Solving](#-development-history--step-by-step-problem-solving)
 - [Contributing](#contributing)
 
 ---
@@ -473,6 +474,111 @@ passphrase ──→ SHA-256 ──→ 256-bit AES key
 - [ ] CMake build system for broader cross-platform support
 - [ ] Hardware Security Module (HSM) integration for key storage
 - [ ] Post-quantum cryptography readiness (CRYSTALS-Kyber)
+
+---
+
+## 🧾 Development History — Step-by-Step Problem Solving
+
+This section documents every real problem encountered and solved during the development of this project, in the exact order they occurred.
+
+---
+
+### 🔨 Step 1 — Project Upgrade: Monolithic to Modular Architecture
+
+The original project was a single `File_Encryption.c` file (~700 lines) mixing UI, file I/O, key validation, and all cipher implementations together. The task was to completely restructure the project with the following requirements:
+
+- Apply proper `snake_case` naming conventions throughout the entire codebase
+- Split the code into 8 focused modules: `main.c`, `logger.c`, `file_handler.c`, `caesar_cipher.c`, `xor_cipher.c`, `aes_gcm.c`, `crypto_dispatcher.c`, `ui.c` — each with its own header file
+- Replace the broken AES-ECB implementation with AES-256-GCM using the OpenSSL EVP high-level API
+- Generate a cryptographically secure random 12-byte IV via `RAND_bytes()` for every encryption operation
+- Prepend the IV and the 16-byte GCM authentication tag to the output file header
+- Replace the deprecated `AES_encrypt()` / `AES_decrypt()` calls with `EVP_EncryptInit_ex` / `EVP_DecryptFinal_ex`
+- Add a timestamped logging system with INFO, WARN, and ERROR levels writing to both `stderr` and a log file
+- Replace all global variables with a single `AppState` struct passed through typed callback context structs
+- Replace raw `GtkWidget**` array callbacks with typed context structs (`BrowseContext`, `ActionContext`, `EncryptContext`, `ClearContext`)
+- Produce a working `Makefile` and a complete `README.md`
+
+---
+
+### 📦 Step 2 — Missing Header Files After Download
+
+After downloading and extracting the project, several files listed in the folder structure were missing. The `include/` folder was incomplete. The missing header files were identified and provided:
+
+- `caesar_cipher.h`
+- `xor_cipher.h`
+- `file_handler.h`
+- `crypto_dispatcher.h`
+- `ui.h`
+
+---
+
+### 🐛 Step 3 — AES-256-GCM Decryption Bug: Extra Words at End of File
+
+**Problem:** AES-256-GCM encryption worked correctly but decryption produced extra garbage bytes at the end of every decrypted file.
+
+**Root cause (two bugs working together):**
+1. `EVP_DecryptUpdate()` intentionally withholds the last 16-byte plaintext block during the streaming loop so it can verify the GCM authentication tag before releasing that data. Those bytes only appear after `EVP_DecryptFinal_ex()` is called.
+2. If the output file previously existed and was larger than the decrypted result, bytes beyond the last `fwrite()` position were not erased — they remained on disk as stale content.
+
+**Fix:** Track the total number of plaintext bytes written across both the loop and `EVP_DecryptFinal_ex()`. After decryption succeeds, call `ftruncate(fileno(output_file), total_written)` to cut the output file to the exact plaintext size.
+
+---
+
+### 🖼️ Step 4 — Browse Error: "Error Opening File" for JPG and PNG
+
+**Problem:** AES-256-GCM could encrypt text files but browsing an image file (`.jpg`, `.png`) caused an error opening the file.
+
+**Root cause:** The original code called `file_open_read()` and stored the `FILE*` in `AppState` at browse time — inside the `on_response_open()` callback. On many desktop environments (GNOME, KDE), the file chooser dialog or thumbnail service reads the same file descriptor after the dialog closes, moving the read position away from byte 0. By the time Encrypt was clicked, `fread()` was reading from mid-file or EOF, producing zero or partial data.
+
+**Fix:** Store only the file path string inside the browse callback. Open both the input and output files inside `on_run_clicked()`, immediately before calling `crypto_dispatch()`, then close them immediately after. This guarantees the file descriptor is always at position 0 for every operation, regardless of file type.
+
+---
+
+### 🚫 Step 5 — "Input File Not Accessible" for JPG and PNG
+
+**Problem:** After the previous fix, browsing a `.jpg` or `.png` showed "Input file not accessible" and the file was rejected before any encryption could occur.
+
+**Root cause:** A `file_exists()` pre-check using `stat()` was added to the browse callback. On modern GNOME/KDE/Wayland systems, `GtkFileChooserNative` routes through the XDG Desktop Portal. The portal returns a `GFile` whose path points to a FUSE-mounted location like `/run/user/1000/doc/a3f9c2b1/photo.jpg`. If the `xdg-document-portal` FUSE daemon was not running, `stat()` reported the file as non-existent even though it was perfectly accessible. Additionally, `g_file_get_path()` returned `NULL` on some portal-backed `GFile` objects, causing the NULL check to fire immediately.
+
+**Fix:** Remove the `file_exists()` pre-check from the browse callback entirely. Replace `g_file_get_path()` with a two-step fallback: try `g_file_get_path()` first, then fall back to `g_filename_from_uri(g_file_get_uri())` to handle URI-backed portal files. Validate accessibility with a real `fopen("rb")` probe instead of `stat()`.
+
+---
+
+### ❌ Step 6 — "Cannot Read Selected File" Still Showing
+
+**Problem:** After the previous fix, browsing a `.jpg` still showed "Cannot read selected file" even though the file existed and was accessible.
+
+**Root cause:** The `fopen("rb")` probe added in the previous fix was itself failing. On modern GNOME/Wayland, even when `g_filename_from_uri()` succeeded and returned a path, that path pointed to the FUSE-mounted portal location. If the FUSE daemon was not running, `fopen()` on that path failed with `ENOENT`.
+
+**Root fix:** Stop using `fopen()` entirely for the input file. Use GIO's `g_file_read()` instead, which communicates with the portal over D-Bus and bypasses the FUSE filesystem completely. The `GFileInputStream` returned by `g_file_read()` implements `GFileDescriptorBased`, so its underlying file descriptor can be extracted with `g_file_descriptor_based_get_fd()`, duplicated with `dup()`, and wrapped as a standard `FILE*` via `fdopen()` for use by the existing crypto functions without any changes to `aes_gcm.c` or other modules.
+
+---
+
+### ⚙️ Step 7 — MinGW32 Compile Error: `obj/ui.o` Error 1
+
+**Problem:** The previous `ui.c` included `#include <gio/gio.h>` and used `g_file_read()`, `G_IS_FILE_DESCRIPTOR_BASED()`, `g_file_descriptor_based_get_fd()`, `dup()`, and `fdopen()`. Building with `mingw32-make` on Windows failed with:
+
+```
+mingw32-make: *** [Makefile:56: obj/ui.o] Error 1
+```
+
+**Root cause:** All of those Linux-only GIO portal APIs do not exist in the MinGW GTK4 bundle on Windows. The `<gio/gio.h>` standalone header is not available in the MinGW distribution, and the portal/FUSE problem does not exist on Windows at all.
+
+**Fix:** Remove all Linux-only code from `ui.c`. On Windows, `GtkFileChooserNative` uses the native Win32 `GetOpenFileName` dialog. `g_file_get_path()` always returns a standard `C:\path\to\file` string that `fopen()` handles directly. The simplified Windows-compatible `ui.c` uses only standard GTK4 headers (`<gtk/gtk.h>`) and compiles cleanly with `mingw32-make`.
+
+---
+
+### 🔓 Step 8 — "Error Opening Input File" When Clicking Encrypt
+
+**Problem:** After browse was fixed and the project compiled successfully on Windows, clicking the Encrypt button showed "Error opening input file" in the status label for any image file.
+
+**Root cause:** `g_file_get_path()` returns a **UTF-8 encoded** string on all platforms including Windows. However, Windows `fopen()` uses the **system ANSI codepage** (such as CP1252 for Western Europe or CP1256 for Arabic locales) — not UTF-8. If the file path contained any character outside plain ASCII — including accented characters, Arabic letters, Chinese characters, or any non-Latin script — `fopen()` silently returned `NULL`, which appeared as "Error opening input file".
+
+**Fix:** Replace all `fopen()` calls in `file_handler.c` with a `fopen_utf8()` helper function that on Windows:
+1. Converts the UTF-8 path string to a wide (`wchar_t*`) string using `MultiByteToWideChar(CP_UTF8, ...)`
+2. Calls `_wfopen()` which accepts wide strings and works correctly with all Windows paths regardless of locale or codepage
+
+On Linux and macOS, the filesystem is natively UTF-8 so `fopen_utf8` compiles as a plain macro that calls `fopen()` directly. No changes to any other module were required.
 
 ---
 
