@@ -8,8 +8,8 @@
 A GUI-based file encryption and decryption desktop application built in **C** using **GTK4** for the graphical interface and **OpenSSL** for cryptographic operations. Supports **Caesar Cipher**, **XOR Cipher**, and **AES-256-GCM** encryption algorithms.
 
 > **Course Code:** 0714 02 CSE 2100
-> **Course Title:** Advanced Programming Laboratory  
-> **Contributors:** MD. Abu Mursalin (ID: 240212). Udoy Munna (ID: 240229) 
+> **Course Title:** Advanced Programming Laboratory
+> **Contributors:** MD. Abu Mursalin (ID: 240212). Udoy Munna (ID: 240229)
 
 ---
 
@@ -35,7 +35,7 @@ A GUI-based file encryption and decryption desktop application built in **C** us
 
 ## Overview
 
-This project started as an academic prototype and was refactored into a structured, industry-closer application by applying **SOLID principles**, **modular architecture**, **secure cryptographic practices**, and **clean coding standards**. The objective is to demonstrate practical software engineering skills including GUI development, cryptographic library integration, event-driven programming, and secure system design.
+This project started as an academic prototype and was progressively refactored into a structured, industry-closer application by applying **SOLID principles**, **modular architecture**, **secure cryptographic practices**, and **clean coding standards**. This updated version introduces a complete modular split into 8 focused source files, a timestamped logging system, a critical AES decryption bug fix, and full Windows/MinGW compatibility. The objective is to demonstrate practical software engineering skills including GUI development, cryptographic library integration, event-driven programming, and secure system design.
 
 ---
 
@@ -44,13 +44,14 @@ This project started as an academic prototype and was refactored into a structur
 - 🗂️ Browse and select any file for encryption or decryption
 - 🔒 Three encryption algorithms: Caesar Cipher, XOR Cipher, AES-256-GCM
 - 🛡️ AES-256-GCM with authenticated encryption (tamper detection)
-- 🔑 PBKDF2-HMAC-SHA256 key derivation with random salt (100,000 iterations)
-- 🎲 Random IV generated per encryption for semantic security
-- 👁️ Password visibility toggle (show/hide passphrase)
+- 🎲 Random 12-byte IV generated per encryption via `RAND_bytes` for semantic security
+- 🔑 SHA-256 key derivation from passphrase to 32-byte AES key
 - ✅ Overwrite original file or save to a new path
 - 🧹 One-click Clear to reset all fields
 - 💬 Descriptive status and error messages for every operation
-- 🔐 Secure key wiping from memory after use (`OPENSSL_cleanse`)
+- 📝 Timestamped logging to both `stderr` and `file_encryption.log`
+- 🪟 Windows / MinGW-compatible GTK4 UI with `GtkFileChooserNative`
+- 🔧 Modular 8-file architecture — each module has a focused single responsibility
 
 ---
 
@@ -64,13 +65,13 @@ The application is organised into four clean layers:
 ├─────────────────────────────────────┤
 │      Controller Layer               │  GTK signal callbacks, state transitions
 ├─────────────────────────────────────┤
-│       Service Layer                 │  perform_encryption / perform_decryption
+│       Service Layer                 │  crypto_dispatch / file_handler
 ├─────────────────────────────────────┤
-│       Crypto Layer                  │  caesar_encrypt/decrypt, xor_cipher,
+│       Crypto Layer                  │  caesar_cipher, xor_cipher,
 │                                     │  aes_gcm_encrypt, aes_gcm_decrypt
 └─────────────────────────────────────┘
            ↓
-    File I/O  (fopen / fread / fwrite)
+    File I/O  (fopen / fread / fwrite / ftruncate)
            ↓
     Encrypted / Decrypted Output File
 ```
@@ -78,9 +79,12 @@ The application is organised into four clean layers:
 ### Key Structs
 
 | Struct | Responsibility |
-|--------|---------------|
+|--------|----------------|
 | `AppState` | Owns all runtime state (paths, flags, action label). Replaces all global variables. |
-| `WidgetBundle` | Groups every GTK widget pointer needed by callbacks. Passed via `gpointer user_data`. |
+| `BrowseContext` | Groups widget pointers needed by file-browse callbacks. |
+| `ActionContext` | Groups widget pointers needed by the encrypt/decrypt action callback. |
+| `EncryptContext` | Groups widget pointers needed by key and algorithm callbacks. |
+| `ClearContext` | Groups widget pointers needed by the Clear button callback. |
 
 ---
 
@@ -99,81 +103,95 @@ Each byte of the file is XOR-ed with the key value. Because XOR is its own inver
 - **Use case:** Lightweight obfuscation. Not cryptographically secure on its own.
 
 ### AES-256-GCM *(primary secure algorithm)*
-Industry-standard symmetric authenticated encryption. Uses a 256-bit key derived from the user's passphrase via PBKDF2. GCM mode provides both confidentiality and integrity — a wrong key or tampered file is detected and rejected before any output is written.
+Industry-standard symmetric authenticated encryption. Uses a 256-bit key derived from the user's passphrase via SHA-256. GCM mode provides both confidentiality and integrity — a wrong key or tampered file is detected and rejected before any output is written.
 
-- **Key derivation:** PBKDF2-HMAC-SHA256, 100,000 iterations, 16-byte random salt
-- **IV:** 12 bytes, randomly generated per encryption
-- **Authentication tag:** 16 bytes (GCM tag), appended to ciphertext
-- **Output file layout:** `[16B salt][12B IV][ciphertext][16B GCM tag]`
+- **Key derivation:** SHA-256 hash of passphrase → 32-byte key
+- **IV:** 12 bytes, randomly generated per encryption via `RAND_bytes`
+- **Authentication tag:** 16 bytes (GCM tag), written immediately after the IV in the file header
+- **Output file layout:** `[12B IV][16B GCM tag][ciphertext]`
 
 ---
 
 ## What Changed — Full Refactoring Log
 
-This section documents every change made during the refactoring of the original academic prototype into the current version.
+This section documents every change made in this updated version of the project.
 
 ---
 
-### 🔴 Security — Critical Fixes
+### 🔴 Security & Bug Fixes — Critical Changes
 
-#### 1. AES mode upgraded from ECB to GCM
+#### 1. AES Decryption Bug Fixed — Garbage Bytes at End of Decrypted Files
+
+This is the most critical fix in this update.
+
+| | Before | After |
+|-|--------|-------|
+| **Symptom** | Decrypted files contained extra/stale bytes at the end, appearing as garbage text | Decrypted file is truncated to the exact plaintext size |
+| **Root cause** | `EVP_DecryptUpdate()` withholds the last 16-byte plaintext block until `EVP_DecryptFinal_ex()` — if the output file was previously larger, those stale bytes remained on disk | Total plaintext bytes written are tracked; `ftruncate()` is called after `EVP_DecryptFinal_ex()` to remove all stale bytes |
+| **Fix** | None | `ftruncate(fileno(output_file), total_written)` after successful decryption |
+
+**Why `EVP_DecryptUpdate` withholds the last block:** OpenSSL delays releasing the final 16 bytes so it can verify the GCM authentication tag *before* exposing any potentially tampered plaintext. Without calling `EVP_DecryptFinal_ex`, those bytes are never flushed — and skipping `ftruncate` after overwriting an older file leaves stale content at the tail.
+
+---
+
+#### 2. AES Mode Upgraded from ECB to GCM
 
 | | Before | After |
 |-|--------|-------|
 | **API** | Low-level `AES_encrypt()` / `AES_set_encrypt_key()` | EVP high-level API (`EVP_EncryptInit_ex`, `EVP_EncryptUpdate`, `EVP_EncryptFinal_ex`) |
-| **Mode** | ECB (Electronic Codebook) — identical plaintext blocks produce identical ciphertext blocks | GCM (Galois/Counter Mode) — randomised, authenticated |
-| **Integrity** | None — a tampered file decrypts silently to garbage | GCM authentication tag verified before writing any output |
+| **Mode** | ECB — identical plaintext blocks produce identical ciphertext blocks | GCM — randomised, authenticated stream cipher |
+| **IV** | None | 12-byte CSPRNG IV prepended to every output file |
+| **Integrity** | None — tampered files decrypt silently to garbage | 128-bit GCM tag detects any modification before writing output |
 | **Header** | `<openssl/aes.h>` | `<openssl/evp.h>` |
 
 ECB mode is considered cryptographically broken for file encryption because patterns in the plaintext are visible in the ciphertext. GCM resolves this and adds integrity checking in a single step.
 
 ---
 
-#### 2. Key derivation upgraded from SHA-256 to PBKDF2-HMAC-SHA256
+#### 3. Random IV Added per Encryption
 
-| | Before | After |
-|-|--------|-------|
-| **Function** | `SHA256(password, len, key)` — single hash pass | `PKCS5_PBKDF2_HMAC(password, len, salt, salt_len, 100000, EVP_sha256(), 32, key)` |
-| **Iterations** | 1 | 100,000 |
-| **Salt** | None | 16 random bytes, stored in output file header |
-| **Brute-force cost** | Negligible | ~100,000× more expensive per guess |
+**Before:** No IV was used — the same key always produced the same ciphertext for the same file.
 
-A bare `SHA256` call over a short password can be brute-forced at billions of guesses per second on modern hardware. PBKDF2 with 100,000 iterations and a unique random salt reduces this to thousands of guesses per second and eliminates pre-computed rainbow table attacks.
+**After:** `RAND_bytes(iv, 12)` generates a cryptographically secure 12-byte IV for every encryption call. The IV is written to the first 12 bytes of the output file and read back at the start of decryption. This ensures semantic security — encrypting the same file twice with the same passphrase always produces completely different ciphertext.
 
 ---
 
-#### 3. Random IV added to AES encryption
-
-**Before:** No IV was used at all — the same key always produced the same ciphertext for the same file.
-
-**After:** `RAND_bytes(iv, 12)` generates a cryptographically secure 12-byte IV per encryption. The IV is written to the output file header and read back during decryption. This ensures semantic security — encrypting the same file twice with the same password produces completely different ciphertext.
-
----
-
-#### 4. GCM authentication tag for integrity verification
+#### 4. GCM Authentication Tag for Integrity Verification
 
 **Before:** No integrity check. A corrupted or maliciously modified encrypted file would decrypt silently, possibly producing usable but incorrect data.
 
-**After:** The GCM tag (16 bytes) is appended at the end of every encrypted file. During decryption, `EVP_DecryptFinal_ex` verifies the tag. If verification fails (wrong password, wrong algorithm, or tampered file), decryption is aborted and the user sees:
+**After:** The 16-byte GCM tag is written to bytes 12–27 of every encrypted file (immediately after the IV). During decryption, `EVP_DecryptFinal_ex` verifies the tag. If verification fails (wrong password, wrong algorithm, or tampered file), decryption is aborted and the user sees:
+
 ```
-Authentication failed! Wrong key or file is corrupted.
+Authentication failed – wrong key or tampered data
 ```
 
 ---
 
-#### 5. Secure key wiping after use
+### 🟠 Architecture — Full Modular Refactor
 
-**Before:** The derived AES key lived in a stack buffer until the function returned. The compiler could optimise away a plain `memset`.
+#### 5. Single 700-Line File Split into 8 Focused Modules
 
-**After:** `OPENSSL_cleanse(aes_key, AES_KEY_SIZE)` is called in a `goto cleanup` path that runs regardless of success or failure. `OPENSSL_cleanse` is guaranteed not to be optimised away by the compiler.
+**Before:** The entire application lived in a single `file_encryptor.c` file (~700 lines), mixing UI construction, file I/O, key validation, and all cipher implementations in one place.
+
+**After:** The code is split into 8 source files, each with its own header, following strict single-responsibility separation:
+
+| Module | Responsibility |
+|--------|----------------|
+| `main.c` | Application entry point — logger init, GTK app setup, signal connection |
+| `logger.c` | Timestamped INFO/WARN/ERROR logging to stderr and log file |
+| `file_handler.c` | Safe file open/close helpers (`file_open_read`, `file_open_write`, `file_close_safe`) |
+| `caesar_cipher.c` | Caesar cipher encrypt and decrypt |
+| `xor_cipher.c` | XOR cipher encrypt and decrypt |
+| `aes_gcm.c` | AES-256-GCM encrypt and decrypt via OpenSSL EVP |
+| `crypto_dispatcher.c` | Routes encrypt/decrypt calls to the correct algorithm; returns typed `CryptoResult` |
+| `ui.c` | Full GTK4 UI construction and all signal callbacks |
 
 ---
 
-### 🟠 Architecture — Structural Refactoring
+#### 6. All Global Variables Eliminated
 
-#### 6. All global variables eliminated
-
-**Before:** Six global variables scattered at file scope:
+**Before:** Six global variables at file scope:
 ```c
 FILE *fr, *fw;
 char *path1, *path2, *Label;
@@ -181,7 +199,8 @@ bool fo, fs, ft;
 ```
 These caused hidden coupling between functions, made testing impossible, and created race-condition risks.
 
-**After:** All state lives in the `AppState` struct, heap-allocated in `activate()` and passed through `WidgetBundle`:
+**After:** All state lives in the `AppState` struct, allocated once in `ui_activate()` and passed through typed callback context structs. No global variables remain anywhere in the codebase.
+
 ```c
 typedef struct {
     char *input_path;
@@ -195,128 +214,117 @@ typedef struct {
 
 ---
 
-#### 7. Widget arrays replaced with a typed struct
+#### 7. Typed Callback Context Structs Replace Raw Widget Casts
 
-**Before:** Multiple separate static arrays such as `widgets[6]`, `widgets1[6]`, `widgets2[3]`, `widgets3[10]`, `widgets4[4]`, `widgets5[2]` — all `GtkWidget *` — were declared and passed to different callbacks. These were error-prone and unreadable.
+**Before:** Callbacks received untyped `GtkWidget **` arrays (e.g. `widgets[6]`, `widgets1[6]`, `widgets2[3]`, `widgets3[10]`) — error-prone and unreadable magic indices.
 
-**After:** A single `WidgetBundle` struct holds every widget pointer by name. All callbacks receive a `WidgetBundle *` cast from `gpointer user_data`. Named fields replace magic array indices.
-
----
-
-#### 8. Layered architecture enforced
-
-**Before:** File I/O (`fopen`/`fclose`), key validation, and algorithm dispatch were all mixed inside the single `do_encrypt_decrypt` callback function.
-
-**After:** Strict layer separation:
-- `activate()` — UI construction only
-- `on_*` / `browse_*` / `do_action` callbacks — controller logic only
-- `perform_encryption()` / `perform_decryption()` — service layer (file I/O + dispatch)
-- `caesar_encrypt()`, `xor_cipher()`, `aes_gcm_encrypt()`, etc. — crypto layer only
+**After:** Four dedicated context structs (`BrowseContext`, `ActionContext`, `EncryptContext`, `ClearContext`) hold only the widget pointers each callback actually needs, accessed by meaningful field names rather than array indices.
 
 ---
 
-#### 9. Centralised ready-state logic
+#### 8. `crypto_dispatcher.c` — Centralised Algorithm Routing
 
-**Before:** The three-condition check (`ft && fo && fs`) and the placeholder-text update were copy-pasted into `on_toggled`, `on_response_open`, and `on_response_save` — three places to maintain.
+**Before:** Algorithm selection via `if/else` chains was scattered across the single monolithic callback.
 
-**After:** A single `refresh_ready_state(WidgetBundle *wb)` function handles all readiness evaluation and UI updates. Every callback that can change state calls it once.
+**After:** `crypto_dispatch()` in `crypto_dispatcher.c` is the single point of routing. It validates all parameters, delegates to the correct cipher module, and returns a typed `CryptoResult` enum. Human-readable messages are produced by `crypto_result_message()`:
 
----
-
-### 🟡 Error Handling — Comprehensive Validation
-
-#### 10. Return values checked and surfaced to the user
-
-**Before:** `fopen`, `fread`, `fwrite`, and OpenSSL calls had no error checking. A failed file open would lead to a null pointer dereference.
-
-**After:** Every function in the service and crypto layers returns `bool` and accepts a `char *error_buf` / `size_t error_buf_size` pair. Specific, human-readable messages are written into the buffer and shown in the result label. Examples:
-
-```
-Cannot open input file: /path/to/file.txt
-Failed to generate random salt/IV.
-Authentication failed! Wrong key or file is corrupted.
-File header is missing or corrupt.
-Caesar key must be between 1 and 25.
+```c
+CRYPTO_OK               → "Operation completed successfully."
+CRYPTO_ERR_INVALID_KEY  → "Invalid key – please check the key constraints."
+CRYPTO_ERR_AUTH_FAILED  → "Authentication failed – wrong key or tampered file."
+CRYPTO_ERR_IO           → "I/O error during operation."
+CRYPTO_ERR_UNKNOWN_ALGO → "Unknown algorithm selected."
+CRYPTO_ERR_NULL_PARAM   → "Internal error: NULL parameter."
 ```
 
 ---
 
-#### 11. Input validation consolidated
+### 🟡 New Feature — Timestamped Logging System
 
-**Before:** Key range validation for Caesar Cipher during decryption used the wrong limit (`key > 255` instead of `key > 25`), creating an inconsistency with the encryption path.
+#### 9. Logging Module Added (`logger.c` / `logger.h`)
 
-**After:** `validate_numeric_key()` centralises validation for both Caesar and XOR, for both encryption and decryption, eliminating the discrepancy.
+**Before:** No logging. Silent failures were the only outcome of most error conditions.
+
+**After:** A dedicated `logger.c` module provides levelled, timestamped logging to both `stderr` and `file_encryption.log` in the working directory. The `LOG_INFO`, `LOG_WARN`, and `LOG_ERROR` macros automatically capture the source file name and line number at the call site.
+
+```
+[2025-06-01 14:23:01] [INFO ] (src/aes_gcm.c:67)  aes_gcm_derive_key: key derived via SHA-256
+[2025-06-01 14:23:01] [INFO ] (src/aes_gcm.c:130) aes_gcm_encrypt: completed successfully
+[2025-06-01 14:23:05] [ERROR] (src/aes_gcm.c:198) aes_gcm_decrypt: authentication FAILED – wrong key or tampered data
+```
+
+The log file is opened in **append mode**, so previous sessions are preserved across runs.
 
 ---
 
-### 🟢 Code Quality — Style & Maintainability
+### 🟢 Code Quality & Platform — Style, Fixes & Compatibility
 
-#### 12. Naming conventions — snake_case throughout
+#### 10. Windows / MinGW Compatibility Fixed in `ui.c`
 
-**Before:** Mixed naming: `caesar_cipher_encrypt`, `do_encrypt_decrypt`, `get_clear`, `browse_clicked_save`, `fo`, `fs`, `ft`, `fr`, `fw`.
+**Before:** Earlier versions attempted to use `<gio/gio.h>`, `g_file_read()`, `G_IS_FILE_DESCRIPTOR_BASED`, `dup()`, and `fdopen()` to work around the XDG Desktop Portal on Linux — none of which exist or are needed on Windows.
 
-**After:** Consistent `snake_case` with meaningful, self-documenting names:
+**After:** The UI compiles cleanly on MinGW32/MinGW64. On Windows, `GtkFileChooserNative` uses the native Win32 common file dialog and `g_file_get_path()` always returns a plain `C:\path\to\file` string that `fopen()` handles directly.
+
+---
+
+#### 11. Three GTK4 UI Bugs Fixed
+
+| Bug | Before | After |
+|-----|--------|-------|
+| **Files opened at browse time** | `fopen` was called immediately when the user selected a file in the chooser dialog, breaking all file types | Path is stored only; the file is opened inside `on_run_clicked()` when the operation actually runs |
+| **`GtkFileChooserNative` memory leak** | The native dialog object was never `g_object_unref`'d after use | `g_object_unref` is called at the top of every response handler |
+| **Ready flags reset too early** | Ready flags were reset before the operation ran, causing race conditions and incorrect UI states | Flags are only reset after a successful run or an explicit Clear action |
+
+---
+
+#### 12. Naming Conventions — `snake_case` Throughout
+
+All identifiers now follow consistent `snake_case` with descriptive, module-prefixed names. Examples:
 
 | Old name | New name |
 |----------|----------|
-| `do_encrypt_decrypt` | `do_action` |
-| `get_clear` | `on_clear` |
-| `browse_clicked_open` | `browse_for_input` |
-| `browse_clicked_save` | `browse_for_output` |
-| `on_response_open` | `on_response_open` *(kept — already clear)* |
 | `fo`, `fs`, `ft` | `input_ready`, `output_ready`, `action_ready` |
-| `fr`, `fw` | `fr`, `fw` *(local only, not global)* |
-| `path1`, `path2` | `output_path`, `input_path` |
+| `path1`, `path2` | `input_path`, `output_path` |
 | `Label` | `action_label` |
+| `do_encrypt_decrypt` | `crypto_dispatch` |
+| `get_clear` | `on_clear` |
+| `widgets[6]` | `BrowseContext`, `ActionContext`, etc. |
 
 ---
 
-#### 13. AES algorithm label updated in the UI
+#### 13. Streaming I/O Buffer Size Defined as a Constant
 
-**Before:** The combo box showed `"AES"` — ambiguous about mode.
+**Before:** AES functions processed one 16-byte cipher block at a time — extremely slow for large files.
 
-**After:** The combo box shows `"AES-256-GCM"` — accurately describes the algorithm, key size, and mode, so users and reviewers know exactly what is being used.
-
----
-
-#### 14. Memory management improved
-
-**Before:** `path1` and `path2` were reassigned without freeing the previous value, leaking memory on every file selection.
-
-**After:** `g_free(state->input_path)` and `g_free(state->output_path)` are called before each reassignment. The `on_clear` callback also frees both paths when resetting the UI.
-
----
-
-#### 15. Streaming block size defined as a constant
-
-**Before:** The AES functions read 16 bytes at a time (one cipher block), which is extremely slow for large files.
-
-**After:** `FILE_BUFFER_SIZE 4096` processes 4 KB per EVP call. Because GCM is a stream-friendly mode, this works without padding concerns and is dramatically faster on large files.
-
----
-
-#### 16. Single-file compilation simplified
-
-The `FILE *fr` and `FILE *fw` are now **local variables** inside `perform_encryption` and `perform_decryption`. This means the functions are fully reentrant and their lifetimes are tightly scoped — files are opened and closed within the same function call.
+**After:** `IO_BUFFER_SIZE 4096` processes 4 KB per EVP call. Because GCM is a stream-friendly mode, there are no padding concerns and performance on large files is significantly improved.
 
 ---
 
 ## Folder Structure
 
 ```
-project_root/
-├── src/
-│   └── file_encryptor.c      # Full application source
-├── include/                  # (future: split headers here)
-│   ├── encryption.h
-│   └── file_handler.h
-├── tests/                    # (future: unit tests)
-├── docs/                     # Project documentation
-│   ├── Advanced_File_Encryption_With_Diagrams.docx
-│   ├── Advanced_File_Encryption_System_Final_Report.docx
-│   └── Advanced_File_Encryption_Thesis_Level_Report.docx
+Updated_Project/
+├── Makefile
 ├── README.md
-└── Makefile
+├── file_encryption.log
+├── include/
+│   ├── common.h              ← Shared types, constants, AppState struct
+│   ├── logger.h              ← Logging interface (INFO/WARN/ERROR macros)
+│   ├── file_handler.h        ← Safe file open/close helpers
+│   ├── caesar_cipher.h       ← Caesar cipher API
+│   ├── xor_cipher.h          ← XOR cipher API
+│   ├── aes_gcm.h             ← AES-256-GCM API
+│   ├── crypto_dispatcher.h   ← Algorithm selector/dispatcher
+│   └── ui.h                  ← GTK4 UI interface
+└── src/
+    ├── main.c                ← Entry point: logger init, GTK app setup
+    ├── logger.c              ← Timestamped logger to stderr + log file
+    ├── file_handler.c        ← file_open_read / write / close_safe
+    ├── caesar_cipher.c       ← Encrypt & decrypt via character shift
+    ├── xor_cipher.c          ← Symmetric XOR stream cipher
+    ├── aes_gcm.c             ← AES-256-GCM via OpenSSL EVP API
+    ├── crypto_dispatcher.c   ← Routes calls to the correct algorithm
+    └── ui.c                  ← Full GTK4 UI and signal callbacks
 ```
 
 ---
@@ -326,7 +334,7 @@ project_root/
 | Dependency | Purpose | Install |
 |------------|---------|---------|
 | GTK 4 | GUI framework | `sudo apt install libgtk-4-dev` |
-| OpenSSL ≥ 1.1 | AES-256-GCM, PBKDF2, RAND_bytes | `sudo apt install libssl-dev` |
+| OpenSSL ≥ 1.1 | AES-256-GCM, `RAND_bytes`, SHA-256 key derivation | `sudo apt install libssl-dev` |
 | GCC | C compiler | `sudo apt install gcc` |
 | Make | Build automation | `sudo apt install make` |
 
@@ -334,38 +342,37 @@ project_root/
 
 ## Building & Running
 
+### Using Make (recommended)
+
+```bash
+# Build
+make
+
+# Build and launch immediately
+make run
+
+# Clean build artefacts
+make clean
+```
+
 ### Using GCC directly
 
 ```bash
-gcc file_encryptor.c -o file_encryptor \
+gcc src/*.c -o file_encryptor \
     $(pkg-config --cflags --libs gtk4) \
     -lssl -lcrypto \
+    -Iinclude \
     -Wall -Wextra -O2
 ```
 
-### Using Make (recommended)
-
-Create a `Makefile`:
-
-```makefile
-CC      = gcc
-CFLAGS  = $(shell pkg-config --cflags gtk4) -Wall -Wextra -O2
-LIBS    = $(shell pkg-config --libs gtk4) -lssl -lcrypto
-TARGET  = file_encryptor
-SRC     = src/file_encryptor.c
-
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRC) $(LIBS)
-
-clean:
-	rm -f $(TARGET)
-```
-
-Then build and run:
+### Windows (MinGW64)
 
 ```bash
-make
-./file_encryptor
+gcc src/*.c -o file_encryptor.exe \
+    $(pkg-config --cflags --libs gtk4) \
+    -lssl -lcrypto \
+    -Iinclude \
+    -Wall -Wextra -O2
 ```
 
 ---
@@ -374,7 +381,7 @@ make
 
 1. **Select Input File** — Click *Browse…* next to "File" and choose the file you want to encrypt or decrypt.
 2. **Select Output File** — Click *Browse…* next to "Output Folder" and choose where the result will be saved. To overwrite the original, select the same file — the *Overwrite original* checkbox will tick automatically.
-3. **Choose Algorithm** — Select one from the dropdown: *Caesar Cipher*, *Xor Cipher*, or *AES-256-GCM*.
+3. **Choose Algorithm** — Select one from the dropdown: *Caesar Cipher*, *XOR Cipher*, or *AES-256-GCM*.
 4. **Select Action** — Choose *Encrypt* or *Decrypt* using the radio buttons.
 5. **Status turns Ready** — Once all three steps above are complete, the status label reads `Status : Ready` and the key field becomes editable.
 6. **Enter Key or Passphrase:**
@@ -394,36 +401,30 @@ make
 
 ```
 ┌──────────────────────┐
-│  16 bytes  PBKDF2    │  Random salt — unique per encryption
-│            salt      │
+│  12 bytes  IV        │  Random IV — unique per encryption (RAND_bytes)
 ├──────────────────────┤
-│  12 bytes  IV        │  Random IV — unique per encryption
+│  16 bytes  GCM Tag   │  Authentication tag — detects tampering or wrong key
 ├──────────────────────┤
 │  N  bytes  Cipher-   │  AES-256-GCM encrypted file content
 │            text      │
-├──────────────────────┤
-│  16 bytes  GCM Tag   │  Authentication tag — detects tampering
 └──────────────────────┘
 ```
 
 ### Key Derivation
 
 ```
-passphrase  ──┐
-              ├──→ PBKDF2-HMAC-SHA256 (100,000 iterations) ──→ 256-bit AES key
-random salt ──┘
+passphrase ──→ SHA-256 ──→ 256-bit AES key
 ```
 
 ### Threat Model Coverage
 
 | Threat | Mitigation |
 |--------|-----------|
-| Brute-force password attack | PBKDF2 with 100k iterations + unique salt |
-| Rainbow table attack | Unique random salt per encryption |
 | Ciphertext-only analysis | AES-256-GCM (IND-CCA2 secure) |
-| File tampering / corruption | GCM authentication tag verification |
-| Key left in memory | `OPENSSL_cleanse` after use |
-| IV reuse | Randomly generated IV per encryption |
+| Identical-plaintext pattern leakage | ECB replaced with GCM + unique random IV per encryption |
+| File tampering / corruption | GCM authentication tag verified before writing any output |
+| IV reuse | Randomly generated 12-byte IV per encryption via `RAND_bytes` |
+| Stale bytes in decrypted output | `ftruncate()` to exact plaintext size after `EVP_DecryptFinal_ex` |
 
 ---
 
@@ -431,10 +432,10 @@ random salt ──┘
 
 | Pattern | Where Applied |
 |---------|--------------|
-| **Strategy Pattern** | Each algorithm (`caesar_encrypt`, `xor_cipher`, `aes_gcm_encrypt`) is an interchangeable function matching the same interface, selected at runtime by `perform_encryption`. |
-| **Factory Pattern** | `perform_encryption` / `perform_decryption` act as factories that dispatch to the correct algorithm based on the selected algorithm string. |
-| **Singleton Pattern** | `AppState` is created once in `activate()` and shared across all callbacks via `WidgetBundle`. |
-| **Observer Pattern** | GTK's signal system (`g_signal_connect`) implements observer — UI events notify callbacks without tight coupling. |
+| **Strategy Pattern** | Each algorithm (`caesar_cipher_encrypt`, `xor_cipher_encrypt`, `aes_gcm_encrypt`) is an interchangeable function selected at runtime by `crypto_dispatch`. |
+| **Factory Pattern** | `crypto_dispatch()` in `crypto_dispatcher.c` acts as a factory that delegates to the correct algorithm module based on the algorithm string. |
+| **Singleton Pattern** | `AppState` is created once in `ui_activate()` and shared across all callbacks via typed context structs. |
+| **Observer Pattern** | GTK's signal system (`g_signal_connect`) implements the observer pattern — UI events notify callbacks without tight coupling between widgets. |
 
 ---
 
@@ -442,36 +443,34 @@ random salt ──┘
 
 | Principle | Implementation |
 |-----------|---------------|
-| **Single Responsibility** | `caesar_encrypt` encrypts only. `perform_encryption` handles file I/O and dispatch only. `refresh_ready_state` updates UI state only. |
-| **Open / Closed** | Adding a new algorithm requires only a new crypto function and one new `else if` branch in `perform_encryption` / `perform_decryption` — existing code is untouched. |
-| **Liskov Substitution** | All cipher functions share compatible signatures `(FILE *fr, FILE *fw, ...)` and can be substituted for one another in the dispatch layer. |
-| **Interface Segregation** | The crypto layer has no knowledge of GTK. The UI layer has no knowledge of OpenSSL. |
-| **Dependency Inversion** | The service layer (`perform_encryption`) depends on the abstract concept of "a function that transforms bytes", not on any specific algorithm implementation. |
+| **Single Responsibility** | Each of the 8 source files has exactly one responsibility. `aes_gcm.c` only handles AES. `logger.c` only handles logging. `crypto_dispatcher.c` only handles routing. |
+| **Open / Closed** | Adding a new cipher requires only a new `.c`/`.h` module and one new branch in `crypto_dispatch()` — no existing code needs to be modified. |
+| **Liskov Substitution** | All cipher functions share compatible `(FILE *input, FILE *output, ...)` signatures and can be substituted for one another in the dispatch layer. |
+| **Interface Segregation** | The crypto layer has no knowledge of GTK. The UI layer has no knowledge of OpenSSL. `logger.h` is the only cross-cutting include. |
+| **Dependency Inversion** | `crypto_dispatcher.c` depends on the abstract concept of "a function that transforms bytes between two file handles", not on any specific algorithm implementation. |
 
 ---
 
 ## Known Limitations
 
-1. AES-256-GCM loads the full ciphertext into a seek-able buffer to extract the trailing tag — very large files (>1 GB) may use significant memory. A future improvement would use a two-pass or length-prefixed approach.
+1. Key derivation uses a single SHA-256 pass — a future improvement would adopt PBKDF2-HMAC-SHA256 with a random salt and 100,000 iterations to resist brute-force attacks on weak passphrases.
 2. Caesar and XOR ciphers are not cryptographically secure and are included for educational demonstration only.
-3. No logging or audit trail for encryption operations.
+3. No progress bar for large file operations.
 4. No automated test suite yet.
-5. No progress bar for large file operations.
-6. Cross-platform support is Linux-focused; Windows requires MSYS2 or WSL.
+5. Cross-platform support is primarily Linux and Windows (MinGW); macOS requires minor build adjustments.
 
 ---
 
 ## Future Improvements
 
+- [ ] Upgrade key derivation from SHA-256 to PBKDF2-HMAC-SHA256 with random salt
 - [ ] Add RSA public-key encryption for key exchange
 - [ ] Implement a progress bar for large file encryption
 - [ ] Add file drag-and-drop support
-- [ ] Introduce a logging framework for audit trails
 - [ ] Add unit tests with a C testing framework (e.g., CUnit, cmocka)
-- [ ] Split into separate `.c` / `.h` modules (`encryption.c`, `file_handler.c`, etc.)
 - [ ] Multi-threading for non-blocking UI during heavy encryption
 - [ ] Cloud storage integration (upload encrypted output)
-- [ ] CMake build system for cross-platform support
+- [ ] CMake build system for broader cross-platform support
 - [ ] Hardware Security Module (HSM) integration for key storage
 - [ ] Post-quantum cryptography readiness (CRYSTALS-Kyber)
 
@@ -492,7 +491,7 @@ This project follows a **GitFlow** branching strategy:
 **Workflow:**
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/your-feature-name`
-3. Commit with descriptive messages: `git commit -m "feat: add PBKDF2 key derivation"`
+3. Commit with descriptive messages: `git commit -m "feat: add modular file split"`
 4. Push and open a Pull Request against `develop`
 5. Ensure the code compiles cleanly with `-Wall -Wextra` before submitting
 
