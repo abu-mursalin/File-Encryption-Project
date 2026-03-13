@@ -26,7 +26,6 @@ A GUI-based file encryption and decryption desktop application built in **C** us
 - [Usage Guide](#usage-guide)
 - [Security Design](#security-design)
 - [Design Patterns](#design-patterns)
-- [SOLID Principles](#solid-principles)
 - [Known Limitations](#known-limitations)
 - [Future Improvements](#future-improvements)
 - [Development History — Step-by-Step Problem Solving](#-development-history--step-by-step-problem-solving)
@@ -437,18 +436,6 @@ passphrase ──→ SHA-256 ──→ 256-bit AES key
 | **Factory Pattern** | `crypto_dispatch()` in `crypto_dispatcher.c` acts as a factory that delegates to the correct algorithm module based on the algorithm string. |
 | **Singleton Pattern** | `AppState` is created once in `ui_activate()` and shared across all callbacks via typed context structs. |
 | **Observer Pattern** | GTK's signal system (`g_signal_connect`) implements the observer pattern — UI events notify callbacks without tight coupling between widgets. |
-
----
-
-## SOLID Principles
-
-| Principle | Implementation |
-|-----------|---------------|
-| **Single Responsibility** | Each of the 8 source files has exactly one responsibility. `aes_gcm.c` only handles AES. `logger.c` only handles logging. `crypto_dispatcher.c` only handles routing. |
-| **Open / Closed** | Adding a new cipher requires only a new `.c`/`.h` module and one new branch in `crypto_dispatch()` — no existing code needs to be modified. |
-| **Liskov Substitution** | All cipher functions share compatible `(FILE *input, FILE *output, ...)` signatures and can be substituted for one another in the dispatch layer. |
-| **Interface Segregation** | The crypto layer has no knowledge of GTK. The UI layer has no knowledge of OpenSSL. `logger.h` is the only cross-cutting include. |
-| **Dependency Inversion** | `crypto_dispatcher.c` depends on the abstract concept of "a function that transforms bytes between two file handles", not on any specific algorithm implementation. |
 
 ---
 
