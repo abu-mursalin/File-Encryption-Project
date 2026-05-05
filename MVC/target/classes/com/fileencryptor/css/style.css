@@ -1,0 +1,181 @@
+/* =============================================================
+   style.css — File Encryptor JavaFX Stylesheet
+   
+   Design goals:
+   - Dark, professional look with a teal accent colour.
+   - High-contrast text for readability.
+   - Clear visual hierarchy between sections.
+   ============================================================= */
+
+/* ── Base / root ─────────────────────────────────────────────── */
+.root {
+    -fx-font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -fx-font-size: 13px;
+    -fx-background-color: #1e1e2e;
+    -fx-text-fill: #cdd6f4;
+}
+
+.root-pane {
+    -fx-background-color: #1e1e2e;
+    -fx-spacing: 14;
+}
+
+/* ── Title ───────────────────────────────────────────────────── */
+.app-title {
+    -fx-font-size: 20px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #89dceb;
+    -fx-padding: 0 0 6 0;
+}
+
+/* ── Field labels (left-aligned, fixed width) ────────────────── */
+.field-label {
+    -fx-text-fill: #a6adc8;
+    -fx-font-size: 13px;
+    -fx-min-width: 110px;
+}
+
+/* ── Read-only path display fields ──────────────────────────── */
+.path-field {
+    -fx-background-color: #313244;
+    -fx-border-color: #45475a;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-text-fill: #cdd6f4;
+    -fx-prompt-text-fill: #585b70;
+    -fx-padding: 6 10;
+}
+
+.path-field:focused {
+    -fx-border-color: #89dceb;
+}
+
+/* ── Algorithm combo-box ─────────────────────────────────────── */
+.combo-box {
+    -fx-background-color: #313244;
+    -fx-border-color: #45475a;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-text-fill: #cdd6f4;
+    -fx-padding: 4 8;
+}
+
+.combo-box .list-cell {
+    -fx-text-fill: #cdd6f4;
+    -fx-background-color: #313244;
+}
+
+.combo-box-popup .list-view {
+    -fx-background-color: #313244;
+    -fx-border-color: #45475a;
+}
+
+.combo-box-popup .list-view .list-cell:hover {
+    -fx-background-color: #45475a;
+}
+
+.combo-box:focused {
+    -fx-border-color: #89dceb;
+}
+
+/* ── Radio buttons ───────────────────────────────────────────── */
+.action-radio {
+    -fx-text-fill: #cdd6f4;
+}
+
+.action-radio:selected {
+    -fx-text-fill: #89dceb;
+}
+
+/* ── Password / passphrase field ─────────────────────────────── */
+.password-field,
+.text-field {
+    -fx-background-color: #313244;
+    -fx-border-color: #45475a;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-text-fill: #cdd6f4;
+    -fx-prompt-text-fill: #585b70;
+    -fx-padding: 6 10;
+}
+
+.password-field:focused,
+.text-field:focused {
+    -fx-border-color: #89dceb;
+}
+
+/* ── Show checkbox ───────────────────────────────────────────── */
+.check-box {
+    -fx-text-fill: #a6adc8;
+}
+
+.check-box:selected {
+    -fx-text-fill: #89dceb;
+}
+
+/* ── Separator ───────────────────────────────────────────────── */
+.separator .line {
+    -fx-border-color: #45475a;
+    -fx-border-width: 1 0 0 0;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+.button {
+    -fx-background-color: #45475a;
+    -fx-text-fill: #cdd6f4;
+    -fx-border-radius: 5;
+    -fx-background-radius: 5;
+    -fx-padding: 7 16;
+    -fx-cursor: hand;
+    -fx-font-size: 13px;
+}
+
+.button:hover {
+    -fx-background-color: #585b70;
+}
+
+.button:pressed {
+    -fx-background-color: #313244;
+}
+
+/* Run button — teal accent ───────────────────────────────────── */
+.run-button {
+    -fx-background-color: #89dceb;
+    -fx-text-fill: #1e1e2e;
+    -fx-font-weight: bold;
+}
+
+.run-button:hover {
+    -fx-background-color: #74c7ec;
+}
+
+.run-button:disabled {
+    -fx-background-color: #313244;
+    -fx-text-fill: #585b70;
+}
+
+/* Clear button — subtle red ──────────────────────────────────── */
+.clear-button {
+    -fx-background-color: #45475a;
+    -fx-text-fill: #f38ba8;
+}
+
+.clear-button:hover {
+    -fx-background-color: #f38ba8;
+    -fx-text-fill: #1e1e2e;
+}
+
+/* ── Status label ────────────────────────────────────────────── */
+.status-label {
+    -fx-text-fill: #a6adc8;
+    -fx-font-style: italic;
+}
+
+/* ── Result label ────────────────────────────────────────────── */
+.result-label {
+    -fx-text-fill: #a6e3a1;
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 0 0 0;
+    -fx-wrap-text: true;
+}
